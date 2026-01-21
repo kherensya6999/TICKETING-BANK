@@ -65,7 +65,7 @@ export default function Register() {
     }
 
     if (formData.role === 'ADMIN' && !formData.admin_code.trim()) {
-      newErrors.admin_code = 'Admin code is required for admin registration';
+      newErrors.admin_code = 'Invitation token is required for admin registration';
     }
 
     setErrors(newErrors);
@@ -315,20 +315,20 @@ export default function Register() {
 
               {formData.role === 'ADMIN' && (
                 <div className="form-group">
-                  <label htmlFor="admin_code">Admin Registration Code *</label>
+                  <label htmlFor="admin_code">Invitation Token *</label>
                   <input
                     id="admin_code"
-                    type="password"
+                    type="text" 
                     value={formData.admin_code}
                     onChange={(e) => setFormData({ ...formData, admin_code: e.target.value })}
                     required
-                    placeholder="Enter admin code"
+                    placeholder="Enter invitation token from Super Admin"
                     className={errors.admin_code ? 'form-input error' : 'form-input'}
                     disabled={loading}
                   />
                   {errors.admin_code && <span className="error-text">{errors.admin_code}</span>}
                   <div className="admin-hint">
-                    🔒 Admin registration requires a special code. Contact system administrator.
+                    🔒 Registration requires a valid invitation token. Contact Super Admin.
                   </div>
                 </div>
               )}

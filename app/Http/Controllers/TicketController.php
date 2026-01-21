@@ -11,6 +11,7 @@ use App\Jobs\SendNotificationJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 
 class TicketController extends Controller
 {
@@ -26,6 +27,8 @@ class TicketController extends Controller
     public function index(Request $request)
     {
         try {
+            $user = $request->user();
+            
             $query = Ticket::with([
                 'category',
                 'subcategory',
@@ -35,6 +38,14 @@ class TicketController extends Controller
                 'slaTracking'
             ]);
 
+            // SECURITY HARDENING: Data Isolation
+            // Jika user bukan Admin dan tidak punya izin view all, 
+            // PAKSA filter hanya tiket milik user tersebut.
+            if ($user->role->role_name === 'USER' && !$user->hasPermission('TICKET_VIEW_ALL')) {
+                $query->where('requester_id', $user->id);
+            }
+
+            // Filter standar (tetap berjalan, tapi di atas isolation layer)
             if ($request->has('status')) {
                 $query->where('status', $request->status);
             }
@@ -44,15 +55,26 @@ class TicketController extends Controller
             if ($request->has('category_id')) {
                 $query->where('category_id', $request->category_id);
             }
+            
+            // Filter assigned_to_id (Hanya relevan untuk Admin/Staff)
             if ($request->has('assigned_to_id')) {
-                $query->where('assigned_to_id', $request->assigned_to_id);
+                // User biasa tidak boleh mengintip tiket orang lain via filter ini
+                if ($user->role->role_name !== 'USER') {
+                    $query->where('assigned_to_id', $request->assigned_to_id);
+                }
             }
+
+            // Filter requester_id (Admin bisa cari user tertentu, User tetap terkunci ke ID sendiri)
             if ($request->has('requester_id')) {
-                $query->where('requester_id', $request->requester_id);
+                if ($user->role->role_name !== 'USER') {
+                    $query->where('requester_id', $request->requester_id);
+                }
             }
+
             if ($request->has('is_security_incident')) {
                 $query->where('is_security_incident', $request->boolean('is_security_incident'));
             }
+            
             if ($request->has('search')) {
                 $search = $request->search;
                 $query->where(function($q) use ($search) {
@@ -109,12 +131,16 @@ class TicketController extends Controller
 
             $ticketNumber = $this->ticketService->generateTicketNumber();
             $category = TicketCategory::findOrFail($request->category_id);
+            
+            // SECURITY: Memastikan flag security incident valid
             $isSecurityIncident = $category->is_security_related || 
                                  $request->priority === 'CRITICAL' ||
-                                 $request->boolean('is_security_incident');
+                                 ($request->boolean('is_security_incident') && $user->role->role_name !== 'USER'); // User biasa tidak bisa manual set flag ini tanpa trigger logic
+
             $priority = $isSecurityIncident && $request->priority !== 'CRITICAL' 
                 ? 'CRITICAL' 
                 : $request->priority;
+            
             $slaPolicy = $this->slaService->getSLAPolicyForPriority($priority, $category);
             $dueDate = $this->slaService->calculateDueDate($slaPolicy);
 
@@ -124,7 +150,7 @@ class TicketController extends Controller
                 'category_id' => $request->category_id,
                 'subcategory_id' => $request->subcategory_id,
                 'requester_id' => $user->id,
-                'status' => 'NEW',
+                'status' => 'NEW', // SECURITY: Force status NEW saat pembuatan
                 'priority' => $priority,
                 'sla_id' => $slaPolicy->id,
                 'due_date' => $dueDate,
@@ -205,6 +231,18 @@ class TicketController extends Controller
                 'securityIncident'
             ])->findOrFail($id);
 
+            // SECURITY HARDENING: Access Control View
+            $user = request()->user();
+            if ($user->role->role_name === 'USER' && 
+                $ticket->requester_id !== $user->id && 
+                !$ticket->watchers->contains($user->id)) {
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized to view this ticket'
+                ], 403);
+            }
+
             return response()->json([
                 'success' => true,
                 'data' => $ticket
@@ -213,7 +251,7 @@ class TicketController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Ticket not found: ' . $e->getMessage()
+                'message' => 'Ticket not found or access denied'
             ], 404);
         }
     }
@@ -224,6 +262,7 @@ class TicketController extends Controller
             $ticket = Ticket::findOrFail($id);
             $user = $request->user();
 
+            // Cek permission dasar
             if (!$this->canModifyTicket($user, $ticket)) {
                 return response()->json([
                     'success' => false,
@@ -231,7 +270,38 @@ class TicketController extends Controller
                 ], 403);
             }
 
-            $validator = Validator::make($request->all(), [
+            // SECURITY HARDENING: Strict Input Validation berdasarkan Role
+            $isAdminOrStaff = $user->role->role_name === 'ADMIN' || $user->hasPermission('TICKET_MANAGE_ALL');
+            
+            $allowedFields = [];
+            
+            if ($isAdminOrStaff) {
+                // Admin/Staff boleh update hampir semua
+                $allowedFields = ['status', 'priority', 'assigned_to_id', 'team_id', 'subject', 'description'];
+            } else {
+                // User biasa HANYA boleh update subject/desc (jika belum diproses) atau Cancel
+                if ($ticket->status === 'NEW') {
+                    $allowedFields = ['subject', 'description', 'status']; // status restricted to CANCELLED below
+                } else {
+                    $allowedFields = ['status']; // Only allowing status change for cancellation/reopen logic
+                }
+            }
+
+            // Filter input hanya field yang diizinkan
+            $input = $request->only($allowedFields);
+
+            // Validasi tambahan untuk User biasa
+            if (!$isAdminOrStaff && isset($input['status'])) {
+                // User hanya boleh Cancel ticket
+                if ($input['status'] !== 'CANCELLED' && $input['status'] !== 'CLOSED') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Users can only Cancel or Close their tickets.'
+                    ], 403);
+                }
+            }
+
+            $validator = Validator::make($input, [
                 'status' => 'sometimes|in:NEW,ASSIGNED,IN_PROGRESS,PENDING,RESOLVED,CLOSED,CANCELLED',
                 'priority' => 'sometimes|in:LOW,MEDIUM,HIGH,URGENT,CRITICAL',
                 'assigned_to_id' => 'sometimes|exists:users,id',
@@ -254,9 +324,7 @@ class TicketController extends Controller
             $oldPriority = $ticket->priority;
             $oldAssignedTo = $ticket->assigned_to_id;
 
-            $ticket->fill($request->only([
-                'status', 'priority', 'assigned_to_id', 'team_id', 'subject', 'description'
-            ]));
+            $ticket->fill($input);
 
             if ($request->has('status') && $request->status !== $oldStatus) {
                 $this->ticketService->addHistory($ticket, 'STATUS_CHANGED', $user->id, 'status', $oldStatus, $request->status);
@@ -291,8 +359,8 @@ class TicketController extends Controller
                 'entity_type' => 'Ticket',
                 'entity_id' => $ticket->id,
                 'description' => "Updated ticket: {$ticket->ticket_number}",
-                'old_values' => $request->all(),
-                'new_values' => $ticket->toArray(),
+                'old_values' => $request->only(array_keys($input)), // Log only what was actually allowed to change
+                'new_values' => $ticket->only(array_keys($input)),
                 'ip_address' => $request->ip(),
             ]);
 
@@ -320,6 +388,20 @@ class TicketController extends Controller
         try {
             $ticket = Ticket::findOrFail($id);
             $user = $request->user();
+
+            // SECURITY HARDENING: Authorization
+            // Hanya Admin atau Assignee yang boleh resolve. 
+            // Requester tidak boleh resolve technical issue, mereka hanya boleh confirm close.
+            $isAuthorized = $user->hasPermission('TICKET_RESOLVE') || 
+                            $ticket->assigned_to_id === $user->id ||
+                            $user->role->role_name === 'ADMIN';
+
+            if (!$isAuthorized) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized. Only assigned staff or admin can resolve tickets.'
+                ], 403);
+            }
 
             if ($ticket->status === 'RESOLVED' || $ticket->status === 'CLOSED') {
                 return response()->json([
@@ -393,6 +475,11 @@ class TicketController extends Controller
         try {
             $ticket = Ticket::findOrFail($id);
             $user = $request->user();
+            
+            // Cek akses view sebelum comment
+            if ($user->role->role_name === 'USER' && $ticket->requester_id !== $user->id) {
+                return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+            }
 
             $validator = Validator::make($request->all(), [
                 'comment_text' => 'required|string',
@@ -408,6 +495,14 @@ class TicketController extends Controller
                     'message' => 'Validation error',
                     'errors' => $validator->errors()
                 ], 422);
+            }
+            
+            // SECURITY: User biasa tidak boleh buat INTERNAL comment
+            if ($user->role->role_name === 'USER' && $request->comment_type === 'INTERNAL') {
+                return response()->json([
+                    'success' => false, 
+                    'message' => 'Users cannot create internal comments'
+                ], 403);
             }
 
             DB::beginTransaction();
@@ -438,6 +533,7 @@ class TicketController extends Controller
                 }
             }
 
+            // Update first response if it's the assignee responding
             if (!$ticket->first_response_at && $ticket->assigned_to_id === $user->id) {
                 $ticket->update(['first_response_at' => now()]);
                 $this->slaService->updateFirstResponse($ticket);
@@ -468,7 +564,7 @@ class TicketController extends Controller
 
     protected function canModifyTicket($user, $ticket): bool
     {
-        if ($user->hasPermission('TICKET_MODIFY_ALL')) {
+        if ($user->hasPermission('TICKET_MODIFY_ALL') || $user->role->role_name === 'ADMIN') {
             return true;
         }
 
@@ -476,7 +572,8 @@ class TicketController extends Controller
             return true;
         }
 
-        if ($ticket->requester_id === $user->id && $ticket->status === 'NEW') {
+        // Requester can modify (subject to strict validation in update method)
+        if ($ticket->requester_id === $user->id) {
             return true;
         }
 

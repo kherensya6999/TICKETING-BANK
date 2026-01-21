@@ -42,7 +42,9 @@ return new class extends Migration
             $table->timestamps();
 
             $table->foreign('ticket_id')->references('id')->on('tickets')->onDelete('cascade');
-            $table->index(['incident_classification', 'investigation_status']);
+            
+            // PERBAIKAN: Memberikan nama index kustom yang lebih pendek agar tidak error
+            $table->index(['incident_classification', 'investigation_status'], 'sec_inc_class_status_idx');
             $table->index('detected_at');
         });
     }

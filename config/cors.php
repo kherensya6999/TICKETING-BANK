@@ -1,24 +1,35 @@
 <?php
 
 return [
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
-    'allowed_methods' => ['*'],
+    /*
+    |--------------------------------------------------------------------------
+    | Cross-Origin Resource Sharing (CORS) Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Here you may configure your settings for cross-origin resource sharing
+    | or "CORS". This determines what cross-origin operations may execute
+    | in web browsers. You are free to adjust these settings as needed.
+    |
+    | To learn more: https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
+    |
+    */
 
-    'allowed_origins' => [
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-        'http://localhost:8000',
-        'http://127.0.0.1:8000',
-    ],
+    'paths' => ['api/*', 'sanctum/csrf-cookie', '*'], // Izinkan semua path
+
+    'allowed_methods' => ['*'], // Izinkan semua method (GET, POST, PUT, DELETE)
+
+    'allowed_origins' => ['*'], // PERBAIKAN UTAMA: Izinkan semua origin (untuk dev)
+    // Nanti di production ganti '*' menjadi ['http://localhost:3000']
 
     'allowed_origins_patterns' => [],
 
-    'allowed_headers' => ['*'],
+    'allowed_headers' => ['*'], // Izinkan semua header
 
     'exposed_headers' => [],
 
     'max_age' => 0,
 
-    'supports_credentials' => true,
+    'supports_credentials' => false, // Set false jika pakai JWT Bearer Token murni (tanpa cookie)
+
 ];

@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\TicketController;
 use App\Http\Controllers\TicketCategoryController;
+use App\Http\Controllers\AdminController; // Pastikan di-import
 use App\Http\Middleware\JWTAuth;
 use App\Http\Middleware\CheckPermission;
 
@@ -16,6 +17,19 @@ Route::middleware([JWTAuth::class])->group(function () {
     // Auth
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
+
+    // --- ADMIN ROUTES (BARU) ---
+    // Route untuk Approve & Lihat User (Butuh permission APPROVE_USERS)
+    Route::middleware([CheckPermission::class . ':APPROVE_USERS'])->group(function () {
+        Route::get('/admin/users', [AdminController::class, 'getUsers']);
+        Route::post('/admin/users/{id}/approve', [AdminController::class, 'approveUser']);
+    });
+
+    // Route untuk Invite Admin (Butuh permission MANAGE_ADMINS)
+    Route::middleware([CheckPermission::class . ':MANAGE_ADMINS'])->group(function () {
+        Route::post('/admin/invite', [AdminController::class, 'inviteAdmin']);
+    });
+    // ---------------------------
 
     // Tickets
     Route::get('/tickets', [TicketController::class, 'index']);

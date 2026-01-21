@@ -14,8 +14,11 @@ return new class extends Migration
             $table->string('session_token', 500);
             $table->string('ip_address', 45);
             $table->text('user_agent')->nullable();
-            $table->timestamp('expires_at');
-            $table->timestamp('last_activity_at');
+            
+            // PERBAIKAN: Menambahkan nullable() untuk menghindari error Invalid Default Value
+            $table->timestamp('expires_at')->nullable();
+            $table->timestamp('last_activity_at')->useCurrent(); // Default ke waktu sekarang
+            
             $table->boolean('is_active')->default(true);
             $table->timestamps();
 

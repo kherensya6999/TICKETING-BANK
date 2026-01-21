@@ -12,29 +12,32 @@ class AuthService
 
     public function __construct()
     {
-        $this->secretKey = config('app.key');
+        // Mengambil key dari .env, jika kosong pakai default
+        $this->secretKey = env('JWT_SECRET', 'rahasia_bank_sumut_2026_secure_key_wajib_ganti');
     }
 
     public function generateToken(User $user): string
     {
         $payload = [
-            'iss' => config('app.url'),
-            'iat' => now()->timestamp,
-            'exp' => now()->addDays(7)->timestamp,
-            'user_id' => $user->id,
-            'employee_id' => $user->employee_id,
-            'role_id' => $user->role_id,
-            'permissions' => $user->role->permissions ?? [],
+            'iss' => env('APP_URL', 'http://localhost:8000'), // Issuer
+            'iat' => now()->timestamp, // Issued At
+            'exp' => now()->addDays(1)->timestamp, // Expire 1 hari
+            'sub' => $user->id, // Subject (User ID)
+            'user' => [
+                'id' => $user->id,
+                'email' => $user->email,
+                'role' => $user->role->role_name ?? 'USER',
+            ]
         ];
 
+        // Generate Token menggunakan algoritma HS256
         return JWT::encode($payload, $this->secretKey, 'HS256');
     }
 
-    public function validateToken(string $token): ?array
+    public function validateToken(string $token): ?object
     {
         try {
-            $decoded = JWT::decode($token, new Key($this->secretKey, 'HS256'));
-            return (array) $decoded;
+            return JWT::decode($token, new Key($this->secretKey, 'HS256'));
         } catch (\Exception $e) {
             return null;
         }
