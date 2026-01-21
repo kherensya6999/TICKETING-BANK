@@ -1,0 +1,5 @@
+{
+    "laravel-extra-intellisense.ideHelperPath": "vendor/laravel/framework/src/Illuminate/Support/Facades",
+    "laravel-extra-intellisense.enable": true,
+    "php.suggest.basic": false
+}
