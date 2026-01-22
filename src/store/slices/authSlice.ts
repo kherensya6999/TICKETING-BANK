@@ -16,14 +16,14 @@ interface User {
 interface AuthState {
   token: string | null;
   user: User | null;
-  isAuthenticated: boolean; // Tambahan penting untuk routing
+  isAuthenticated: boolean;
   loading: boolean;
   error: string | null;
 }
 
 const initialState: AuthState = {
   token: localStorage.getItem('token'),
-  user: null,
+  user: null, 
   isAuthenticated: !!localStorage.getItem('token'),
   loading: false,
   error: null,
@@ -34,39 +34,35 @@ export const login = createAsyncThunk(
   async (credentials: { username: string; password: string }, { rejectWithValue }) => {
     try {
       const response = await authService.login(credentials);
-      // PERBAIKAN 1: Akses nested data (response.data.data)
-      const data = response.data.data; 
+      
+      // Ambil data dari response backend
+      const responseData = response.data;
+
+      // Cek sukses dari backend
+      if (!responseData.success) {
+        return rejectWithValue(responseData.message || 'Login failed');
+      }
+
+      // Ambil token dan user dari nested data
+      const { token, user } = responseData.data;
       
       // Simpan token
-      localStorage.setItem('token', data.token);
+      localStorage.setItem('token', token);
       
-      return data; // Mengembalikan { token: '...', user: {...} }
+      return { token, user };
     } catch (error: any) {
-      // PERBAIKAN 2: Tangkap error dari backend
-      return rejectWithValue(error.response?.data?.message || 'Login failed');
+      // Tangkap pesan error spesifik dari backend
+      const message = error.response?.data?.message || error.message || 'Login failed';
+      return rejectWithValue(message);
     }
   }
 );
 
 export const register = createAsyncThunk(
   'auth/register',
-  async (data: {
-    employee_id: string;
-    username: string;
-    email: string;
-    password: string;
-    password_confirmation: string;
-    first_name: string;
-    last_name: string;
-    phone?: string;
-    role: 'USER' | 'ADMIN';
-    admin_code?: string;
-    department_id?: number;
-    branch_id?: number;
-  }, { rejectWithValue }) => {
+  async (data: any, { rejectWithValue }) => {
     try {
       const response = await authService.register(data);
-      // Backend register response mungkin berbeda strukturnya, tapi biasanya di wrapper data
       return response.data; 
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || 'Registration failed');
@@ -78,7 +74,7 @@ export const logout = createAsyncThunk('auth/logout', async () => {
   try {
     await authService.logout();
   } catch (error) {
-    // Ignore logout errors
+    // Ignore error logout
   }
   localStorage.removeItem('token');
 });
@@ -88,7 +84,7 @@ export const getMe = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const response = await authService.getMe();
-      // PERBAIKAN 3: Akses nested data untuk user info
+      // Data user ada di response.data.data
       return response.data.data; 
     } catch (error: any) {
       if (error.response?.status === 401) {
@@ -108,7 +104,6 @@ const authSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    // Login Handling
     builder
       .addCase(login.pending, (state) => {
         state.loading = true;
@@ -122,12 +117,23 @@ const authSlice = createSlice({
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload as string; // Pesan error dari rejectWithValue
+        state.error = action.payload as string;
         state.isAuthenticated = false;
-      });
-
-    // Register Handling
-    builder
+      })
+      .addCase(logout.fulfilled, (state) => {
+        state.token = null;
+        state.user = null;
+        state.isAuthenticated = false;
+      })
+      .addCase(getMe.fulfilled, (state, action: PayloadAction<any>) => {
+        state.user = action.payload;
+        state.isAuthenticated = true;
+      })
+      .addCase(getMe.rejected, (state) => {
+        state.user = null;
+        state.token = null;
+        state.isAuthenticated = false;
+      })
       .addCase(register.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -139,26 +145,6 @@ const authSlice = createSlice({
       .addCase(register.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
-      });
-
-    // Logout Handling
-    builder.addCase(logout.fulfilled, (state) => {
-      state.token = null;
-      state.user = null;
-      state.isAuthenticated = false;
-    });
-
-    // Get Me Handling
-    builder
-      .addCase(getMe.fulfilled, (state, action: PayloadAction<any>) => {
-        state.user = action.payload; // Payload sudah berisi data user bersih
-        state.isAuthenticated = true;
-      })
-      .addCase(getMe.rejected, (state) => {
-        state.user = null;
-        state.token = null;
-        state.isAuthenticated = false;
-        // Token dihapus di thunk jika 401
       });
   },
 });
