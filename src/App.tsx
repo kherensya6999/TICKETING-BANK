@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import TicketList from './pages/TicketList';
 import TicketDetail from './pages/TicketDetail';
 import CreateTicket from './pages/CreateTicket';
+import UserManagement from './pages/UserManagement';
 import Layout from './components/layout/Layout';
 import { useAppSelector, useAppDispatch } from './store/hooks';
 import { getMe } from './store/slices/authSlice';

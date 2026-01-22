@@ -63,7 +63,15 @@ const ticketSlice = createSlice({
       })
       .addCase(fetchTickets.fulfilled, (state, action) => {
         state.loading = false;
-        state.tickets = action.payload.data || [];
+        // Handle pagination: if data.data exists and is an array, use it. Otherwise use data directly if it is an array.
+        const responseData = action.payload.data;
+        if (responseData && Array.isArray(responseData.data)) {
+            state.tickets = responseData.data;
+        } else if (Array.isArray(responseData)) {
+            state.tickets = responseData;
+        } else {
+            state.tickets = [];
+        }
       })
       .addCase(fetchTickets.rejected, (state, action) => {
         state.loading = false;

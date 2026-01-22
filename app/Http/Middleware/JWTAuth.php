@@ -23,6 +23,7 @@ class JWTAuth
         $token = $request->bearerToken();
 
         if (!$token) {
+            \Illuminate\Support\Facades\Log::warning('JWTAuth: Token not provided');
             return response()->json([
                 'success' => false,
                 'message' => 'Token not provided'
@@ -32,6 +33,7 @@ class JWTAuth
         $payload = $this->authService->validateToken($token);
 
         if (!$payload) {
+            \Illuminate\Support\Facades\Log::warning('JWTAuth: Invalid or expired token', ['token' => substr($token, 0, 10) . '...']);
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid or expired token'
@@ -44,6 +46,10 @@ class JWTAuth
             ->first();
 
         if (!$session) {
+            \Illuminate\Support\Facades\Log::warning('JWTAuth: Session not found in DB', [
+                'token_preview' => substr($token, 0, 10) . '...',
+                'user_id' => $payload->sub ?? 'unknown'
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Session expired'
@@ -52,9 +58,24 @@ class JWTAuth
 
         $session->update(['last_activity_at' => now()]);
 
-        $user = User::find($payload['user_id']);
+        // Fix: Access user ID from 'sub' claim (standard JWT) or 'user' object
+        // The previous code $payload['user_id'] was incorrect because:
+        // 1. JWT::decode returns an object, not an array
+        // 2. The key 'user_id' does not exist in AuthService payload (it uses 'sub' and 'user.id')
+        $userId = $payload->sub ?? ($payload->user->id ?? null);
+
+        if (!$userId) {
+             \Illuminate\Support\Facades\Log::warning('JWTAuth: User ID not found in token payload');
+             return response()->json([
+                 'success' => false,
+                 'message' => 'Invalid token structure'
+             ], 401);
+        }
+
+        $user = User::find($userId);
 
         if (!$user || !$user->is_active) {
+            \Illuminate\Support\Facades\Log::warning('JWTAuth: User not found or inactive', ['user_id' => $userId]);
             return response()->json([
                 'success' => false,
                 'message' => 'User not found or inactive'

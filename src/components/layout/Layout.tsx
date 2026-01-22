@@ -73,6 +73,16 @@ export default function Layout() {
             <span className="nav-icon">📈</span>
             <span>Reports</span>
           </Link>
+
+          {(user?.role === 'Admin' || user?.role === 'SUPER_ADMIN') && (
+            <Link 
+              to="/admin/users" 
+              className={`nav-item ${isActive('/admin/users') ? 'active' : ''}`}
+            >
+              <span className="nav-icon">👥</span>
+              <span>User Management</span>
+            </Link>
+          )}
         </nav>
 
         <div className="sidebar-footer">
