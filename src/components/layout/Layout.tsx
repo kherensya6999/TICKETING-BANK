@@ -1,129 +1,134 @@
-import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAppDispatch, useAppSelector } from '../../store/hooks';
+import { useState, useEffect } from 'react';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import { logout } from '../../store/slices/authSlice';
+import { fetchTickets } from '../../store/slices/ticketSlice';
 import './Layout.css';
 
 export default function Layout() {
-  const dispatch = useAppDispatch();
-  const navigate = useNavigate();
-  const location = useLocation();
   const { user } = useAppSelector((state) => state.auth);
-  const { unreadCount } = useAppSelector((state) => state.notifications);
+  const { tickets } = useAppSelector((state) => state.tickets);
+  const dispatch = useAppDispatch();
+  const location = useLocation();
+  const navigate = useNavigate();
+  
+  const [showNotifications, setShowNotifications] = useState(false);
 
-  const handleLogout = () => {
-    dispatch(logout());
+  // Ambil data tiket untuk menghitung badge
+  useEffect(() => {
+    dispatch(fetchTickets({ page: 1, per_page: 100 }));
+  }, [dispatch]);
+
+  const pendingCount = tickets.filter(t => t.status === 'NEW' || t.status === 'PENDING').length;
+  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN';
+
+  const handleLogout = async () => {
+    await dispatch(logout());
     navigate('/login');
   };
 
-  const isActive = (path: string) => location.pathname === path;
-
   return (
-    <div className="layout">
+    <div className="app-layout">
+      {/* SIDEBAR */}
       <aside className="sidebar">
-        <div className="sidebar-header">
-          <div className="logo">
-            <div className="logo-icon">🏦</div>
-            <div className="logo-text">
-              <h2>Bank Sumut</h2>
-              <p>IT Ticketing</p>
-            </div>
-          </div>
+        <div className="sidebar-brand">
+          <div className="logo-icon">🏦</div>
+          <span className="brand-name">Bank Sumut IT</span>
         </div>
-        
-        <nav className="sidebar-nav">
-          <Link 
-            to="/dashboard" 
-            className={`nav-item ${isActive('/dashboard') ? 'active' : ''}`}
-          >
-            <span className="nav-icon">📊</span>
-            <span>Dashboard</span>
-          </Link>
-          
-          <Link 
-            to="/tickets" 
-            className={`nav-item ${isActive('/tickets') ? 'active' : ''}`}
-          >
-            <span className="nav-icon">🎫</span>
-            <span>Tickets</span>
-            {unreadCount > 0 && (
-              <span className="nav-badge">{unreadCount}</span>
-            )}
-          </Link>
-          
-          <Link 
-            to="/tickets/create" 
-            className={`nav-item ${isActive('/tickets/create') ? 'active' : ''}`}
-          >
-            <span className="nav-icon">➕</span>
-            <span>Create Ticket</span>
-          </Link>
-          
-          <Link 
-            to="/security" 
-            className={`nav-item ${isActive('/security') ? 'active' : ''}`}
-          >
-            <span className="nav-icon">🔒</span>
-            <span>Security Incidents</span>
-          </Link>
-          
-          <Link 
-            to="/reports" 
-            className={`nav-item ${isActive('/reports') ? 'active' : ''}`}
-          >
-            <span className="nav-icon">📈</span>
-            <span>Reports</span>
-          </Link>
 
-          {(user?.role === 'Admin' || user?.role === 'SUPER_ADMIN') && (
-            <Link 
-              to="/admin/users" 
-              className={`nav-item ${isActive('/admin/users') ? 'active' : ''}`}
-            >
-              <span className="nav-icon">👥</span>
-              <span>User Management</span>
+        <nav className="sidebar-nav">
+          <div className="nav-group">
+            <p className="nav-title">MAIN MENU</p>
+            <Link to="/dashboard" className={`nav-item ${location.pathname === '/dashboard' ? 'active' : ''}`}>
+              <span className="icon">📊</span> Dashboard
             </Link>
+            
+            <Link to="/tickets" className={`nav-item ${location.pathname.includes('/tickets') ? 'active' : ''}`}>
+              <span className="icon">🎫</span> Tickets
+              {pendingCount > 0 && <span className="badge-count">{pendingCount}</span>}
+            </Link>
+          </div>
+
+          {isAdmin && (
+            <div className="nav-group">
+              <p className="nav-title">ADMINISTRATION</p>
+              <Link to="/users" className={`nav-item ${location.pathname === '/users' ? 'active' : ''}`}>
+                <span className="icon">👥</span> Users
+              </Link>
+              <Link to="/reports" className={`nav-item ${location.pathname === '/reports' ? 'active' : ''}`}>
+                <span className="icon">📈</span> Reports
+              </Link>
+              <Link to="/settings" className={`nav-item ${location.pathname === '/settings' ? 'active' : ''}`}>
+                <span className="icon">⚙️</span> Settings
+              </Link>
+            </div>
           )}
         </nav>
 
         <div className="sidebar-footer">
-          <div className="user-info">
-            <div className="user-avatar">
-              {user?.full_name?.charAt(0) || 'U'}
-            </div>
-            <div className="user-details">
-              <div className="user-name">{user?.full_name || 'User'}</div>
-              <div className="user-role">{user?.role || 'User'}</div>
-            </div>
-          </div>
           <button onClick={handleLogout} className="btn-logout">
-            🚪 Logout
+            <span className="icon">🚪</span> Logout
           </button>
         </div>
       </aside>
 
+      {/* MAIN CONTENT AREA */}
       <main className="main-content">
+        {/* TOP HEADER */}
         <header className="top-header">
-          <div className="header-left">
-            <h1 className="page-title">
-              {location.pathname === '/dashboard' && 'Dashboard'}
-              {location.pathname === '/tickets' && 'Tickets'}
-              {location.pathname === '/tickets/create' && 'Create New Ticket'}
-              {location.pathname.startsWith('/tickets/') && !location.pathname.includes('/create') && 'Ticket Details'}
-              {location.pathname === '/security' && 'Security Incidents'}
-              {location.pathname === '/reports' && 'Reports'}
-            </h1>
+          <div className="header-search">
+            <span className="search-icon">🔍</span>
+            <input type="text" placeholder="Search anything..." />
           </div>
-          <div className="header-right">
-            <div className="notifications">
-              <span className="notification-icon">🔔</span>
-              {unreadCount > 0 && (
-                <span className="notification-badge">{unreadCount}</span>
+          
+          <div className="header-actions">
+            {/* NOTIFICATION BELL */}
+            <div className="notification-wrapper">
+              <button className="btn-icon" onClick={() => setShowNotifications(!showNotifications)}>
+                🔔
+                {pendingCount > 0 && <span className="notif-dot"></span>}
+              </button>
+              
+              {/* DROPDOWN NOTIFIKASI */}
+              {showNotifications && (
+                <div className="notification-dropdown">
+                  <div className="dropdown-header">
+                    <h4>Notifikasi</h4>
+                    <button onClick={() => setShowNotifications(false)}>✕</button>
+                  </div>
+                  <div className="dropdown-body">
+                    {pendingCount > 0 ? (
+                      <div className="notif-item unread">
+                        <div className="notif-icon">🔥</div>
+                        <div className="notif-text">
+                          <p><strong>{pendingCount} Tiket Baru</strong></p>
+                          <small>Butuh penanganan segera.</small>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="empty-state">Tidak ada notifikasi baru</div>
+                    )}
+                  </div>
+                  <Link to="/tickets" className="dropdown-footer">Lihat Semua</Link>
+                </div>
               )}
+            </div>
+
+            {/* USER PROFILE */}
+            <div className="user-profile-header">
+              <div className="avatar">
+                {user?.full_name?.charAt(0) || 'U'}
+              </div>
+              <div className="user-info">
+                <span className="name">{user?.full_name?.split(' ')[0]}</span>
+                <span className="role">{user?.role?.replace('_', ' ')}</span>
+              </div>
             </div>
           </div>
         </header>
 
-        <div className="content-wrapper">
+        {/* PAGE CONTENT */}
+        <div className="page-wrapper">
           <Outlet />
         </div>
       </main>
